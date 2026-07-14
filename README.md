@@ -1,4 +1,4 @@
-Use the following Bash script to create the entire directory structure in one go.
+**Use the following Bash script to create the entire directory structure in one go.**
 
 ```bash
 #!/bin/bash
