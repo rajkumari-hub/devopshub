@@ -1,0 +1,144 @@
+DevSecOps:
+Development + Security + Operations.
+
+Devops engineers will focus on speed,collaboration and automation.
+Devsecops engineer will focus on speed + security + automation.
+
+Devsecops will helps to integrate security scannings inside pipeline.
+This helps identify vulnerabilities early (shift-left security) before 
+applications reach production.
+
+Shift-left security means moving security checks earlier (“left”) in the 
+Software Development Life Cycle (SDLC) instead of finding issues at the end 
+or after deployment.
+
+Security issues are found late, which causes:
+
+-)Rework
+-)Delayed releases
+-)Higher fixing cost
+
+Shift-left approach:
+
+Plan → Code → Build → Test → Deploy → Production
+        ↑       ↑       ↑
+     Security Security Security
+      Checks   Checks   Checks
+
+Security is integrated from the beginning.
+
+Prerequisites:
+##############
+1) EC2 instance -- t3.xlarge -- 20gb volume
+2) Install jenkins and Docker and setup sonarube using docker image
+3) Install aws cli, eksctl,kubectl on ec2.
+4) Iam role with below policies attached.
+   AmazonEC2ContainerRegistryPowerUser
+   AmazonEC2FullAccess
+   AmazonEKSClusterPolicy
+   AmazonVPCFullAccess
+   AWSCloudFormationFullAccess
+   IAMFullAccess
+5) Setup eks cluster using below command.
+"eksctl create cluster \
+  --name petclinic-cluster \
+  --region us-east-1 \
+  --nodegroup-name workers \
+  --node-type t3.medium \
+  --nodes 1 \
+  --nodes-min 1 \
+  --nodes-max 2 \
+  --managed"   
+
+Plugins Required:
+#################
+Git Plugin
+Maven Integration Plugin
+SonarQube Scanner for Jenkins
+OWASP Dependency-Check Plugin
+Credentials Plugin
+Credentials Binding Plugin
+GitHub Plugin
+Docker Pipeline Plugin
+ 
+Below is the production based DevSecOps pipeline:
+Source Code: https://github.com/betawins/spring-petclinic.git
+
+1) Git checkout  -- To download source code
+
+2) Git leaks -- To identify any secrets in the source code.
+"gitleaks dir . \
+--config .gitleaks.toml \
+--verbose \
+--redact \
+--exit-code 1"
+
+3) Maven Compilation -- To compile the code
+"clean compile -Dcheckstyle.skip=true"
+
+4) Sonarqube -- To check for qulity of code
+"sonar.projectKey=spring-petclinic
+sonar.projectName=spring-petclinic
+sonar.projectVersion=1.0
+sonar.sources=src/main/java
+sonar.java.binaries=target/classes"
+
+5) Maven test -- Run unit/integration tests
+"test -Dcheckstyle.skip=true"
+
+6) Owasp -- TO check for vulnerabilities packages for pom.xml and external dependencies.
+"--project "spring-petclinic" \
+--scan . \
+--format HTML \
+--format XML \
+--out dependency-check-report \
+--failOnCVSS 7"
+
+7) Maven Package -- To create artifact.
+"clean package -Dcheckstyle.skip=true"
+
+8) Docker Build -- To create docker image
+"docker build -t spring-petclinic:${BUILD_NUMBER} ."
+
+9) Trivy scan -- To scan docker images for vulnerabilities
+"trivy image \
+--severity HIGH,CRITICAL \
+--exit-code 1 \
+spring-petclinic:${BUILD_NUMBER}"
+
+10) Push to ECR -- Push docker image to ecr
+"echo "Login to ECR"
+aws ecr get-login-password --region us-east-1 | \
+docker login \
+--username AWS \
+--password-stdin 703800905711.dkr.ecr.us-east-1.amazonaws.com
+echo "Update tag to image"
+docker tag spring-petclinic:${BUILD_NUMBER} \
+703800905711.dkr.ecr.us-east-1.amazonaws.com/petclinic:${BUILD_NUMBER}
+echo "Push image to ecr"
+docker push \
+703800905711.dkr.ecr.us-east-1.amazonaws.com/petclinic:${BUILD_NUMBER}"
+
+11) Update the k8s manifest file and push to github repo.
+"rm -rf petclinic-gitops
+
+git clone https://betawins:$GITHUB_TOKEN@github.com/betawins/petclinic-gitops.git
+
+cd petclinic-gitops
+
+git remote set-url origin https://betawins:$GITHUB_TOKEN@github.com/betawins/petclinic-gitops.git
+
+git config user.name "Jenkins"
+git config user.email "jenkins@example.com"
+
+sed -i "s|image: .*|image: 703800905711.dkr.ecr.us-east-1.amazonaws.com/petclinic:${BUILD_NUMBER}|g" deployment.yaml
+
+git add deployment.yaml
+git commit -m "Updated image to build ${BUILD_NUMBER}"
+
+git push origin main"
+
+12) Deploy using Argocd.
+
+
+
