@@ -1,0 +1,171 @@
+@channel Promethues notes.
+Prometheus:
+==========
+Prometheus is an open source monitoring tool developed by soundcloud using GO programming language..
+We can monitoring our infrastructure devices using prometheus.
+Infrastructure devices means it can monitor cpu,memory,file system,network bandwidth and etc.
+Monitoring:  Things working as expected
+Observability: why things are not working
+Traces: How did a request flow though the system
+How to Monitor?
+We need to install prometheus in one server and install the below agents on the target machines which we want to monitor.
+Promethues stores all the target information in prometheus.yml file.
+Server monitoring:
+=================
+We need to setup node exporter on prometheus server to monitor cpu,memory,disk usage,file system,network bandwidth.
+Network Monitoring:
+==================
+We need to setup SNMP exporter allows to monitor network related metrics.
+Monitor Batch jobs:
+==================
+Using push gateway we can monitor batch jobs.
+Batch jobs means which are running in the background for automation.
+Prometheus also provides web user interface where we can see all the metrics and the machines which are being monitored.
+Interface of prometheus is quite complex so we use Grafana for visualization of graphs and dashboards.
+Prometheus Architecture:
+=======================
+In promethues server we can find three main components:
+1) Retrieval : which pull the metrics from target machines.
+2) TSDB(Time series Data base): TSDB is different from our RDMS which stores data based on time series.
+3) HTTP Server: Promethues also has web user interface,this can be run on HTTP server.
+Promethues using promQuerylanguage to fetch the data from prometheus server.
+Grafana will also use promQuerylanguage to fetch the data from prometheus server.
+We can also use API clients external to show the data on our websites.
+Prometheus also support Alerting with the help of AlertManager which will send alerts to
+pagerduty,email,telegram etc.
+Service Discovery in prometheus will connect to target systems on its own if new targets are added to environment.
+Prometheus will also use static configuration, where we need to add the target machine information in promethues server.
+Prometheus Installation:
+=======================
+https://prometheus.io/download
+Download the latest version
+Command to start Prometheus:
+./prometheus --config.file=prometheus.yml
+Now let us create a service file for Prometheus to run in background.
+sudo vi /etc/systemd/system/prometheus.service
+Copy paste the below data and modify as per your requirement.
+[Unit]
+Description=Prometheus Monitoring Service
+Wants=network-online.target
+After=network-online.target
+[Service]
+User=root
+Group=root
+Type=simple
+ExecStart=/opt/prometheus-3.6.0-rc.0.linux-amd64/prometheus \
+  --config.file=/opt/prometheus-3.6.0-rc.0.linux-amd64/prometheus.yml \
+  --storage.tsdb.path=/opt/prometheus-3.6.0-rc.0.linux-amd64/data \
+  --web.listen-address=:9090
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+sudo systemctl daemon-reload
+sudo systemctl start prometheus
+By default configuration prometheus is monitoring its own server.
+Now let us install node exporter plugin and monitor cpu related metrics.
+Install node exporter plugin using below url.
+https://prometheus.io/download/
+Create service file using below data.
+[Unit]
+Description=Node Exporter
+After=network.target
+[Service]
+User=nobody
+ExecStart=/opt/node_exporter-1.9.1.linux-amd64/node_exporter
+Restart=on-failure
+[Install]
+WantedBy=multi-user. Target
+Start node exporter service using
+sudo systemctl start node_exporter
+You can access metrics on port 9100
+Publicip:9100/metrics
+Now add node exporter details in promethues.yml file.
+Add the below details
+scrape_configs:
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+Restart Prometheus server to reflect changes.
+Now to to dashboard and check for metrics.
+You can use below query to check overall cpu from last 1 minute.
+100 - (avg by(instance)(irate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)
+Types of exporters in promethues.
+Exporters are small daemons that expose metrics in Prometheus format.
+1) Node Exporter → system metrics (CPU, memory, disk, network)
+2) Blackbox Exporter → probes endpoints (HTTP, TCP, ICMP, DNS)
+3) MySQL / Postgres Exporters → DB performance stats
+4) JMX Exporter → Java/JVM metrics
+5) SNMP Exporter → network devices via SNMP
+6) HAProxy / Nginx / Apache Exporters → web server metrics
+7) Consul / Etcd / Kubernetes metrics → cluster health
+Now Launch one target ec2 where you want prometheus to monitor.
+Install node exporter on the target machine and create a service file and start node_exporter service.
+https://prometheus.io/download/
+Now go to prometheus server.
+Open prometheus.yml file and add the target ip address and port number
+restart the prometheus server.
+Example:
+scrape_configs:
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+      - targets: ['publicip:9100']
+Try to test using below query and you can see both metrics.
+100 - (avg by(instance)(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+Service Discovery:
+==================
+It will help you to automatically find new targets, instead of manually updating Prometheus.yml file.
+Prometheus will support automatically no additional plugin required.
+Create IAM role and attach to promethues server.
+Create policy using below json and attach to role.
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeTags"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+Update Prometheus.yml file with below data.
+scrape_configs:
+  - job_name: 'ec2-node-exporter'
+    ec2_sd_configs:
+      - region: ap-south-1         # Change to your AWS region
+        port: 9100                 # Node Exporter port
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Name]
+        regex: "prometheus-node.*"
+        action: keep
+It will fetch all the targets with prometheus-node label only.
+Restart Prometheus server.
+Now you can launch new ec2 and you can see that in target as well.
+To monitor logs you need to install node_exporter plugin in newly launched ec2.
+Create Dashboards in Grafana:
+=============================
+Grafana is a visulaization tool which can be integrated using prometheus and other monitoring platforms.
+Install Grafana:
+===============
+https://grafana.com/grafana/download
+Go to the bin directory of the package extracted and run grafana-server.
+./grafana-server
+Access grafana on port <public-ip>:3000
+Note: Deafault credentials will be
+username: admin
+password: admin
+Once grafana is installed go to connections --> data source and add the url of prometheus server and click on save.
+Now we will get all the metrics from prometheus to grafana.
+How to create dashboard?
+We can create dashboard from scratch or import the existing dashboard.
+go to https://grafana.com/grafana/dashboards/3662-prometheus-2-0-overview/
+and either download the json or copy the id.
+Go to dashboard-->select import and add the id/upload the json and save.
+Now we can able to see a beautiful dashboard with our metrics.
+Click on create Dashboard --> Add visualization --> click on data source --> click on code and enter query
+1) CPu utilization --> 100 - (avg by(instance)(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+2) Uptime --> (node_time_seconds - node_boot_time_seconds) / 3600
+Select what type of dashboard you want and then save dashboard.
